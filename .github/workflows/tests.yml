@@ -55,7 +55,14 @@ jobs:
           brew install --build-from-source nikitakurpas/tap/keylet
           "$(brew --prefix keylet)/bin/keylet" --help
           python3 "$(brew --repository nikitakurpas/tap)/scripts/ci_environment_probe.py" "$(brew --prefix keylet)/bin/keylet"
+          python3 "$(brew --repository nikitakurpas/tap)/scripts/ci_sandbox_probe.py" "$(brew --prefix keylet)/bin/keylet" || true
           brew test --verbose nikitakurpas/tap/keylet
+      - name: Capture Keylet sandbox startup reason
+        if: failure() && matrix.os == 'macos-26' && github.event_name == 'push'
+        shell: bash
+        run: |
+          python3 "$(brew --repository nikitakurpas/tap)/scripts/ci_crash_reason.py" || true
+          sudo /usr/bin/log show --last 5m --info --debug --style compact --predicate '(process == "keylet") OR (eventMessage CONTAINS[c] "keylet" AND (process == "kernel" OR process == "sandboxd" OR process == "secinitd" OR process == "amfid" OR process == "ReportCrash"))' || true
       - name: Diagnose Keylet test launch failure
         if: failure() && matrix.os == 'macos-26' && github.event_name == 'push'
         shell: bash
