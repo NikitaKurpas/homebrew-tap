@@ -1,11 +1,8 @@
 # Release template only; render from the verified, notarized archive.
-require "digest"
-
 class Keylet < Formula
   desc "Secure Enclave SSH agent and Git signing CLI"
   homepage "https://github.com/NikitaKurpas/keylet"
   url "https://github.com/NikitaKurpas/keylet/releases/download/v0.1.2/Keylet-0.1.2-arm64.zip"
-  version "0.1.2"
   sha256 "ed2d2333c3005079d148a71f5ecd55508a9dec817f7395bfead5a157a0761950"
   license "MIT"
 
@@ -42,15 +39,22 @@ class Keylet < Formula
       exec "$app/Contents/MacOS/keylet" agent --key "$key"
     SH
     chmod 0755, bin/"keylet-agent-service"
+    # This helper is outside the sealed bundle and runs after linkage handling.
+    (libexec/"keylet-verify-install").write <<~RUBY
+      #!/usr/bin/ruby
+      require "digest"
+      app = File.join(__dir__, "Keylet.app")
+      digest = Digest::SHA256.file(File.join(app, "Contents/MacOS/keylet")).hexdigest
+      if digest != "a1369264b6ef22bc79dc187fdf926f01c1bdb1c6363edcb1736bb779dab9eb48"
+        abort "Homebrew changed the signed Keylet binary. Do not re-sign it; restore the verified release."
+      end
+      system("/usr/bin/codesign", "--verify", "--strict", app) || abort("Keylet signature verification failed.")
+    RUBY
+    chmod 0755, libexec/"keylet-verify-install"
   end
 
-  def post_install
-    # Homebrew linkage repair runs after install; check the final bytes afterward.
-    app = libexec/"Keylet.app"
-    unless Digest::SHA256.file(app/"Contents/MacOS/keylet").hexdigest == "a1369264b6ef22bc79dc187fdf926f01c1bdb1c6363edcb1736bb779dab9eb48"
-      odie "Homebrew changed the signed Keylet binary. Do not re-sign it; restore the verified release."
-    end
-    system "/usr/bin/codesign", "--verify", "--strict", app
+  post_install_steps do
+    run "keylet-verify-install", base: :libexec
   end
 
   service do

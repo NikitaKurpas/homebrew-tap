@@ -49,6 +49,11 @@ jobs:
       - run: brew test-bot --only-setup
 
       - run: brew test-bot --only-tap-syntax
+      - name: Install and test signed Keylet release on macOS
+        if: matrix.os == 'macos-26' && github.event_name == 'push'
+        run: |
+          brew install --build-from-source nikitakurpas/tap/keylet
+          brew test nikitakurpas/tap/keylet
       - run: brew test-bot --only-formulae
         if: github.event_name == 'pull_request'
 
