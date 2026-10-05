@@ -55,6 +55,46 @@ jobs:
           brew install --build-from-source nikitakurpas/tap/keylet
           "$(brew --prefix keylet)/bin/keylet" --help
           brew test --verbose nikitakurpas/tap/keylet
+      - name: Diagnose Keylet test launch failure
+        if: failure() && matrix.os == 'macos-26' && github.event_name == 'push'
+        shell: bash
+        run: |
+          python3 - <<'PYDIAG'
+          import json, pathlib, time
+          decoder = json.JSONDecoder()
+          directory = pathlib.Path.home() / 'Library/Logs/DiagnosticReports'
+          found = False
+          for attempt in range(5):
+              reports = sorted(directory.glob('keylet*.ips'), key=lambda p: p.stat().st_mtime, reverse=True)
+              for path in reports[:3]:
+                  if time.time() - path.stat().st_mtime > 600 or path.stat().st_size > 2_000_000:
+                      continue
+                  try:
+                      text = path.read_text()
+                      header, offset = decoder.raw_decode(text)
+                      while offset < len(text) and text[offset].isspace():
+                          offset += 1
+                      body, _ = decoder.raw_decode(text, offset)
+                  except (OSError, ValueError, TypeError):
+                      continue
+                  if not isinstance(body, dict) or body.get('procName', '').lower() != 'keylet':
+                      continue
+                  found = True
+                  result = {'process': 'keylet'}
+                  for section, keys in {'exception': ['type', 'signal'], 'termination': ['namespace', 'code']}.items():
+                      values = body.get(section, {})
+                      result[section] = {key: values[key] for key in keys
+                                         if isinstance(values, dict) and isinstance(values.get(key), (str, int))}
+                  os_version = body.get('osVersion', {})
+                  result['osVersion'] = {key: os_version[key] for key in ['train', 'build']
+                                         if isinstance(os_version, dict) and isinstance(os_version.get(key), str)}
+                  print(json.dumps(result, sort_keys=True))
+              if found:
+                  break
+              time.sleep(2)
+          if not found:
+              print('No recent Keylet crash metadata available; termination cause remains unknown.')
+          PYDIAG
       - run: brew test-bot --only-formulae
         if: github.event_name == 'pull_request'
 
