@@ -54,6 +54,7 @@ jobs:
         run: |
           brew install --build-from-source nikitakurpas/tap/keylet
           "$(brew --prefix keylet)/bin/keylet" --help
+          python3 "$(brew --repository nikitakurpas/tap)/scripts/ci_environment_probe.py" "$(brew --prefix keylet)/bin/keylet"
           brew test --verbose nikitakurpas/tap/keylet
       - name: Diagnose Keylet test launch failure
         if: failure() && matrix.os == 'macos-26' && github.event_name == 'push'
