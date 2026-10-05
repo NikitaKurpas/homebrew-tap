@@ -1,0 +1,77 @@
+# Release template only; render from the verified, notarized archive.
+require "digest"
+
+class Keylet < Formula
+  desc "Secure Enclave SSH agent and Git signing CLI"
+  homepage "https://github.com/NikitaKurpas/keylet"
+  url "https://github.com/NikitaKurpas/keylet/releases/download/v0.1.2/Keylet-0.1.2-arm64.zip"
+  version "0.1.2"
+  sha256 "ed2d2333c3005079d148a71f5ecd55508a9dec817f7395bfead5a157a0761950"
+  license "MIT"
+
+  depends_on arch: :arm64
+  depends_on macos: :tahoe
+  skip_clean "libexec/Keylet.app"
+
+  def install
+    # Homebrew commonly strips an archive's sole top-level app directory.
+    if (buildpath/"Keylet.app/Contents").directory?
+      libexec.install "Keylet.app"
+    elsif (buildpath/"Contents").directory?
+      (libexec/"Keylet.app").install "Contents"
+    else
+      odie "Release archive has no Keylet.app/Contents"
+    end
+    bin.install_symlink libexec/"Keylet.app/Contents/MacOS/keylet"
+    # External wrapper: never modify/re-sign anything inside the sealed bundle.
+    (bin/"keylet-agent-service").write <<~SH
+      #!/bin/bash
+      set -euo pipefail
+      key="${KEYLET_KEY_ID:-}"
+      if ! [[ "$key" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+        echo "Set KEYLET_KEY_ID to an existing Keylet UUID in Homebrew's user services/keylet.env, then restart the service." >&2
+        exit 1
+      fi
+      app=#{(opt_libexec/"Keylet.app").to_s.shellescape}
+      actual=$(/usr/bin/shasum -a 256 "$app/Contents/MacOS/keylet")
+      if [[ "${actual%% *}" != "a1369264b6ef22bc79dc187fdf926f01c1bdb1c6363edcb1736bb779dab9eb48" ]]; then
+        echo "Keylet binary differs from the signed release; refusing to start." >&2
+        exit 1
+      fi
+      /usr/bin/codesign --verify --strict "$app"
+      exec "$app/Contents/MacOS/keylet" agent --key "$key"
+    SH
+    chmod 0755, bin/"keylet-agent-service"
+  end
+
+  def post_install
+    # Homebrew linkage repair runs after install; check the final bytes afterward.
+    app = libexec/"Keylet.app"
+    unless Digest::SHA256.file(app/"Contents/MacOS/keylet").hexdigest == "a1369264b6ef22bc79dc187fdf926f01c1bdb1c6363edcb1736bb779dab9eb48"
+      odie "Homebrew changed the signed Keylet binary. Do not re-sign it; restore the verified release."
+    end
+    system "/usr/bin/codesign", "--verify", "--strict", app
+  end
+
+  service do
+    run [opt_bin/"keylet-agent-service"]
+    keep_alive true
+    process_type :background
+    throttle_interval 10
+  end
+
+  def caveats
+    <<~EOS
+      Requires Apple Silicon and macOS 26.4 or newer. No key is created by installation.
+      To start an approved existing key at user login, set KEYLET_KEY_ID=<uuid> in
+      $XDG_CONFIG_HOME/homebrew/services/keylet.env when XDG_CONFIG_HOME is set;
+      otherwise use $HOMEBREW_XDG_CONFIG_HOME/homebrew/services/keylet.env if set,
+      or ~/.homebrew/services/keylet.env. Then run brew services start keylet without sudo.
+      Stop the service before upgrades and restart it afterward. Keep the app bundle intact.
+    EOS
+  end
+
+  test do
+    assert_match "Keylet", shell_output("#{bin}/keylet --help")
+  end
+end
