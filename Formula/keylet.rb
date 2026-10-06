@@ -2,8 +2,8 @@
 class Keylet < Formula
   desc "Secure Enclave SSH agent and Git signing CLI"
   homepage "https://github.com/NikitaKurpas/keylet"
-  url "https://github.com/NikitaKurpas/keylet/releases/download/v0.2.0/Keylet-0.2.0-arm64.zip"
-  sha256 "f7a93b418eabd613b2305813b699620391cc9b51ac84bb810d875268127d9ce1"
+  url "https://github.com/NikitaKurpas/keylet/releases/download/v0.3.0/Keylet-0.3.0-arm64.zip"
+  sha256 "05861d94a7ad9fdd8fdd8a6c0004582f3cc00374e50802767549d441f0767a09"
   license "MIT"
 
   depends_on arch: :arm64
@@ -27,7 +27,7 @@ class Keylet < Formula
       require "digest"
       app = File.join(__dir__, "Keylet.app")
       digest = Digest::SHA256.file(File.join(app, "Contents/MacOS/keylet")).hexdigest
-      if digest != "b2fdf15098cc939a21e2dc474c25ac604b0591a3c217b0a93cedf4c4844a3af8"
+      if digest != "ba817194c1d4ebde9e133b8156ac9075eec1db0fecafed339f7d6a79999dd74e"
         abort "Homebrew changed the signed Keylet binary. Do not re-sign it; restore the verified release."
       end
       system("/usr/bin/codesign", "--verify", "--strict", app) || abort("Keylet signature verification failed.")
